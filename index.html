@@ -1,0 +1,782 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Provider Load Balancing Demo</title>
+<meta name="description" content="Interactive demo of how load-factor based patient distribution skews when a provider is added or weekly hours change.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232563eb'/%3E%3Crect x='6' y='16' width='5' height='10' rx='1.5' fill='white'/%3E%3Crect x='13.5' y='10' width='5' height='16' rx='1.5' fill='white'/%3E%3Crect x='21' y='5' width='5' height='21' rx='1.5' fill='white'/%3E%3C/svg%3E">
+<style>
+:root{
+  --bg:#f4f6f9;--surface:#fff;--surface2:#f0f3f8;--text:#14181f;--muted:#586172;--border:#d9dee7;
+  --accent:#2563eb;--on-accent:#fff;--accent-soft:#dbe7ff;--warn:#b45309;--warn-bg:#fef3c7;--warn-border:#f2c46a;
+  --good:#15803d;--good-bg:#dcfce7;--track:#e4e8ef;--shadow:0 1px 2px rgba(20,24,31,.06);
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --bg:#0e1218;--surface:#171c25;--surface2:#1e2430;--text:#e8ecf3;--muted:#9ba5b6;--border:#2b3342;
+    --accent:#6b9cff;--on-accent:#0b1220;--accent-soft:#1d2d50;--warn:#fbbf24;--warn-bg:#35280a;--warn-border:#7a5a12;
+    --good:#4ade80;--good-bg:#12301d;--track:#262d3b;--shadow:none;
+  }
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;overflow-x:hidden}
+.wrap{max-width:1200px;margin:0 auto;padding:16px}
+h1{font-size:1.5rem;line-height:1.25;margin:4px 0 4px}
+h2{font-size:1.1rem;margin:0 0 12px}
+h3{font-size:.8rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:16px 0 4px}
+p{margin:0 0 8px}
+.sub{color:var(--muted);margin:0 0 16px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:16px;box-shadow:var(--shadow);min-width:0}
+.muted{color:var(--muted)}
+.small{font-size:.85rem}
+button,input,select{font:inherit;color:inherit}
+.btn{min-height:44px;padding:0 16px;border-radius:10px;border:1px solid var(--border);background:var(--surface);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:6px}
+.btn:hover:not(:disabled){border-color:var(--accent)}
+.btn.primary{background:var(--accent);color:var(--on-accent);border-color:var(--accent);font-weight:600}
+.btn.danger{color:var(--warn)}
+.btn:disabled,input:disabled,select:disabled{opacity:.55;cursor:not-allowed}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+input[type=text],input[type=number],select{min-height:44px;border:1px solid var(--border);border-radius:10px;padding:0 10px;background:var(--surface2);max-width:100%}
+input[type=range]{width:100%;min-height:44px;accent-color:var(--accent)}
+label{display:block;font-size:.85rem;color:var(--muted);margin-bottom:4px}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end}
+.row>*{min-width:0}
+.grow{flex:1 1 180px}
+.layout{display:grid;gap:0 16px;grid-template-columns:minmax(0,1fr)}
+@media (min-width:1050px){.layout{grid-template-columns:minmax(0,1.5fr) minmax(340px,1fr);align-items:start}.aside{position:sticky;top:12px;max-height:calc(100vh - 24px);overflow:auto}}
+
+/* About */
+details.about{padding:0}
+details.about>summary{list-style:none;cursor:pointer;min-height:44px;padding:12px 16px;display:flex;align-items:center;gap:10px;font-weight:600;border-radius:14px}
+details.about>summary::-webkit-details-marker{display:none}
+details.about>summary::before{content:"";width:10px;height:10px;border-right:2px solid var(--accent);border-bottom:2px solid var(--accent);transform:rotate(-45deg);transition:transform .25s ease;flex:none;margin:0 4px 0 2px}
+details.about[open]>summary::before{transform:rotate(45deg)}
+.about-body{padding:0 16px 16px;animation:slide .3s ease}
+@keyframes slide{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+.about-body h3{margin-top:14px;color:var(--accent)}
+.illus{margin:14px 0 4px;padding:12px;border:1px dashed var(--border);border-radius:12px;background:var(--surface2)}
+.illus .lbl{font-size:.8rem;color:var(--muted);margin:6px 0 4px}
+.flow{display:flex;height:34px;border-radius:8px;overflow:hidden;background:var(--track)}
+.flow span{display:flex;align-items:center;justify-content:center;color:#fff;font-size:.78rem;font-weight:600;white-space:nowrap;overflow:hidden}
+.legend{display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:8px;font-size:.8rem;color:var(--muted)}
+.dot{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:baseline}
+
+/* Toolbar */
+.scen{display:flex;flex-wrap:wrap;gap:8px}
+.strat{margin-top:12px}
+.strat-desc{margin:8px 0 0;padding:8px 10px;background:var(--surface2);border-radius:8px;font-size:.88rem;color:var(--muted)}
+
+/* Skew */
+.stats{display:grid;gap:8px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
+.stat{background:var(--surface2);border-radius:10px;padding:10px 12px}
+.stat b{display:block;font-size:1.25rem;font-variant-numeric:tabular-nums}
+.stat span{font-size:.8rem;color:var(--muted)}
+.badge{display:inline-block;padding:2px 10px;border-radius:99px;font-size:.8rem;font-weight:600;background:var(--surface2);color:var(--muted)}
+.badge.warn{background:var(--warn-bg);color:var(--warn);border:1px solid var(--warn-border)}
+.badge.good{background:var(--good-bg);color:var(--good)}
+.badge{white-space:nowrap}.badge.next{background:var(--accent-soft);color:var(--accent)}
+.alert{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px;padding:10px 12px;border-radius:10px;background:var(--warn-bg);border:1px solid var(--warn-border);color:var(--warn);font-weight:600}
+.alert.ok{background:var(--good-bg);border-color:transparent;color:var(--good)}
+.alert.neutral{background:var(--surface2);border-color:var(--border);color:var(--muted);font-weight:400}
+
+/* View banner */
+.viewbar{display:none;align-items:center;gap:10px;flex-wrap:wrap;justify-content:space-between;margin-bottom:16px;padding:10px 14px;border-radius:12px;background:var(--accent-soft);border:1px solid var(--accent)}
+.viewbar.on{display:flex}
+
+/* Table */
+table{width:100%;border-collapse:collapse}
+th{font-size:.78rem;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);text-align:left;padding:6px 8px;border-bottom:1px solid var(--border)}
+td{padding:8px;border-bottom:1px solid var(--border);vertical-align:middle}
+td.num,th.num{font-variant-numeric:tabular-nums}
+tr.cand{background:var(--accent-soft)}
+.pname{display:flex;align-items:center;gap:8px;font-weight:600;flex-wrap:wrap}
+.hrs{width:84px}
+.bar{height:12px;background:var(--track);border-radius:6px;overflow:hidden;min-width:80px}
+.bar>i{display:block;height:100%;border-radius:6px;transition:width .25s}
+.c-bar{width:24%}
+@media (max-width:759px){
+  table,tbody{display:block}
+  thead{display:none}
+  tbody tr{display:grid;grid-template-columns:1fr 1fr;gap:6px 14px;border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:10px}
+  td{border:0;padding:0;display:flex;justify-content:space-between;align-items:center;gap:8px;min-height:32px}
+  td::before{content:attr(data-label);color:var(--muted);font-size:.8rem}
+  td.c-name,td.c-bar,td.c-act{grid-column:1/-1}
+  td.c-name::before,td.c-act::before,td.c-bar::before{display:none}
+  td.c-act{justify-content:flex-end}
+  td.c-bar .bar{flex:1}
+  td.c-bar::before{display:block;margin-right:8px}
+}
+
+/* Stream */
+.stream{display:flex;flex-wrap:wrap;gap:2px;min-height:14px;margin-top:6px}
+.stream i{width:9px;height:9px;border-radius:2px;display:block}
+.ticker{min-height:1.5em}
+
+/* Chart */
+.crow{display:grid;grid-template-columns:110px minmax(0,1fr);gap:4px 12px;padding:8px 0;border-bottom:1px solid var(--border)}
+.crow:last-child{border-bottom:0}
+.cname{font-weight:600;display:flex;align-items:center;gap:6px;min-width:0;overflow-wrap:anywhere}
+.cbars{display:grid;gap:6px;min-width:0}
+.track{position:relative;height:16px;background:var(--track);border-radius:5px;overflow:hidden;display:flex}
+.track .b0{background:var(--muted);opacity:.5;height:100%;transition:width .3s}
+.track .b1{height:100%;transition:width .3s}
+.lf{position:relative;height:16px;background:var(--track);border-radius:5px}
+.mk{position:absolute;top:-2px;width:4px;height:20px;border-radius:2px;margin-left:-2px}
+.mk.before{background:transparent;border:2px solid var(--muted)}
+.mk.after{background:var(--text)}
+.cnum{grid-column:1/-1;font-size:.85rem;color:var(--muted);font-variant-numeric:tabular-nums}
+.cnum b{color:var(--text)}
+.key{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:.8rem;color:var(--muted);margin-bottom:8px}
+@media (max-width:480px){.crow{grid-template-columns:1fr}}
+
+/* History */
+.hist{list-style:none;margin:0;padding:0;display:grid;gap:10px;position:relative}
+.evt{all:unset;box-sizing:border-box;display:block;width:100%;cursor:pointer;border:1px solid var(--border);border-radius:12px;padding:12px;background:var(--surface);min-height:44px}
+.evt:hover{border-color:var(--accent)}
+.evt:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.evt.sel{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft);background:var(--accent-soft)}
+.evt .h{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.evt .t{font-weight:700}
+.evt .n{font-size:.75rem;color:var(--muted);margin-left:auto}
+.evt .s{display:block;margin:4px 0 8px;font-size:.92rem}
+.evt .s.skew{color:var(--warn)}
+.drows{display:grid;gap:6px}
+.drow{display:grid;grid-template-columns:minmax(80px,1fr) minmax(0,1.3fr);gap:2px 10px;font-size:.82rem;font-variant-numeric:tabular-nums;padding:4px 0;border-top:1px solid var(--border)}
+.drow.chg .dl{font-weight:600}
+.drow .dn{display:flex;align-items:center;gap:6px;font-weight:600;overflow-wrap:anywhere}
+.drow .dv{color:var(--muted)}
+.drow .dv b{color:var(--text)}
+.dbar{grid-column:1/-1;position:relative;height:8px;background:var(--track);border-radius:4px}
+.dbar .f{position:absolute;left:0;top:0;height:100%;border-radius:4px;opacity:.85}
+.dbar .tk{position:absolute;top:-3px;width:2px;height:14px;background:var(--text);margin-left:-1px}
+.dbar-key{font-size:.75rem;color:var(--muted);margin:0 0 8px}
+
+/* Controls */
+.addform{margin-top:12px;padding:12px;border:1px solid var(--border);border-radius:12px;background:var(--surface2)}
+.addform[hidden]{display:none}
+.quick{display:flex;gap:8px;flex-wrap:wrap}
+.quick .btn{min-width:56px;padding:0 12px}
+.n-in{width:110px}
+.sep{height:1px;background:var(--border);margin:16px 0}
+.msg{min-height:1.4em;color:var(--warn);font-size:.9rem;margin-top:6px}
+footer{color:var(--muted);font-size:.8rem;text-align:center;padding:8px 0 24px}
+[inert]{opacity:.6}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Provider Load Balancing Demo</h1>
+    <p class="sub">See why a new provider, or a change in weekly hours, makes every new patient go to one provider.</p>
+  </header>
+
+  <details class="card about" open>
+    <summary>About this demo: the problem and the fix</summary>
+    <div class="about-body">
+      <h3>How distribution works</h3>
+      <p>Every new patient goes to the provider with the lowest load factor (patients &divide; weekly hours). A provider with more hours naturally receives more patients.</p>
+      <h3>The problem</h3>
+      <p>A new provider starts with 0 patients, so their load factor is 0. Until it catches up with everyone else, every new patient goes only to them. The same happens when an existing provider's hours increase: their load factor suddenly drops. The result is a <b>burst</b> to one provider instead of an even flow.</p>
+      <div class="illus" role="img" aria-label="Before a new provider joins, incoming patients are shared by hours. After, all of them go to the new provider.">
+        <div class="lbl">Before new provider: share of the next 100 patients</div>
+        <div class="flow">
+          <span style="width:40%;background:hsl(277 62% 48%)">40%</span>
+          <span style="width:30%;background:hsl(344 62% 48%)">30%</span>
+          <span style="width:20%;background:hsl(51 62% 48%)">20%</span>
+          <span style="width:10%;background:hsl(118 62% 48%)">10%</span>
+        </div>
+        <div class="lbl">After new provider (0 patients): share of the next 100 patients</div>
+        <div class="flow">
+          <span style="width:100%;background:hsl(185 62% 48%)">100% to the new provider</span>
+        </div>
+        <div class="legend">
+          <span><i class="dot" style="background:hsl(277 62% 48%)"></i>Sarah 40h</span>
+          <span><i class="dot" style="background:hsl(344 62% 48%)"></i>James 30h</span>
+          <span><i class="dot" style="background:hsl(51 62% 48%)"></i>Emily 20h</span>
+          <span><i class="dot" style="background:hsl(118 62% 48%)"></i>Oliver 10h</span>
+          <span><i class="dot" style="background:hsl(185 62% 48%)"></i>New provider</span>
+        </div>
+      </div>
+      <h3>What this demo shows</h3>
+      <p>A history of events (before &rarr; after), how load factors change after a provider is added or hours are edited, and where the next patients go. Click any history entry to inspect the state at that moment.</p>
+      <h3>Possible fixes</h3>
+      <p><b>Fair start:</b> a new provider starts with a realistic patient count (hours &times; average load factor of the others).<br>
+         <b>Batch cap:</b> no provider gets more than K patients in a row.<br>
+         <b>Smooth weighted round-robin:</b> each batch is spread in proportion to hours.</p>
+      <p class="muted small">Switch the strategy below and repeat a scenario to compare the result.</p>
+    </div>
+  </details>
+
+  <div class="viewbar" id="viewbar" role="status">
+    <span id="viewtext"></span>
+    <button class="btn primary" id="backBtn" type="button">Back to current</button>
+  </div>
+
+  <div class="layout">
+    <div class="main">
+      <section class="card" id="controls" aria-label="Controls">
+        <h2>Scenarios</h2>
+        <div class="scen">
+          <button class="btn primary" data-lock type="button" id="scNew">New provider joins</button>
+          <button class="btn primary" data-lock type="button" id="scHours">Hours increased</button>
+          <button class="btn" data-lock type="button" id="scReset">Reset</button>
+        </div>
+        <div class="strat">
+          <label for="strategy">Distribution strategy</label>
+          <div class="row">
+            <select id="strategy" data-lock class="grow">
+              <option value="current">Current</option>
+              <option value="fair">A. Fair start</option>
+              <option value="cap">B. Batch cap</option>
+              <option value="wrr">C. Smooth weighted round-robin</option>
+            </select>
+            <div id="capWrap" hidden>
+              <label for="cap">Max in a row (K)</label>
+              <input id="cap" data-lock type="number" min="1" max="100" value="10" class="n-in" inputmode="numeric">
+            </div>
+          </div>
+          <p class="strat-desc" id="stratDesc"></p>
+        </div>
+
+        <div class="sep"></div>
+        <div class="row">
+          <button class="btn" data-lock type="button" id="addToggle" aria-expanded="false" aria-controls="addForm">Add provider</button>
+        </div>
+        <form class="addform" id="addForm" hidden>
+          <div class="row">
+            <div class="grow"><label for="newName">Name</label><input type="text" id="newName" maxlength="30" style="width:100%" required></div>
+          </div>
+          <div class="row" style="margin-top:8px">
+            <div class="grow"><label for="newHoursRange">Hours / week</label><input type="range" id="newHoursRange" min="1" max="60" value="40"></div>
+            <div><label for="newHours">&nbsp;</label><input type="number" id="newHours" min="1" max="60" value="40" class="n-in" inputmode="numeric"></div>
+          </div>
+          <p class="muted small" id="addHint" style="margin-top:8px"></p>
+          <button class="btn primary" type="submit" data-lock>Add</button>
+        </form>
+
+        <div class="sep"></div>
+        <h2>Add patients</h2>
+        <div class="row">
+          <div><label for="nPat">Patients (N)</label><input id="nPat" type="number" min="1" max="5000" value="100" class="n-in" inputmode="numeric"></div>
+          <div class="quick" id="quick">
+            <button class="btn" data-lock type="button" data-n="10">10</button>
+            <button class="btn" data-lock type="button" data-n="50">50</button>
+            <button class="btn" data-lock type="button" data-n="100">100</button>
+            <button class="btn" data-lock type="button" data-n="500">500</button>
+          </div>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <button class="btn primary" data-lock type="button" id="distBtn">Distribute</button>
+          <button class="btn" type="button" id="skipBtn" hidden>Skip animation</button>
+        </div>
+        <div class="msg" id="msg" role="alert"></div>
+        <div class="ticker small muted" id="ticker" aria-live="polite"></div>
+        <div class="stream" id="stream" aria-hidden="true"></div>
+      </section>
+
+      <section class="card" aria-label="Skew indicator">
+        <h2>Skew indicator</h2>
+        <div id="skew"></div>
+      </section>
+
+      <section class="card" aria-label="Providers">
+        <h2>Providers</h2>
+        <table>
+          <thead><tr>
+            <th>Name</th><th>Hours / week</th><th class="num">Patients</th><th class="num">Load factor</th><th class="num">Share</th><th>Load factor bar</th><th></th>
+          </tr></thead>
+          <tbody id="tbody"></tbody>
+        </table>
+        <p class="muted small" style="margin-top:8px">Highlighted row = next candidate (lowest load factor). Providers with 0 hours are excluded.</p>
+      </section>
+
+      <section class="card" aria-label="Distribution chart">
+        <h2>Distribution chart</h2>
+        <p class="muted small" id="chartTitle"></p>
+        <div class="key">
+          <span><i class="dot" style="background:var(--muted);opacity:.5"></i>patients before</span>
+          <span><i class="dot" style="background:var(--accent)"></i>patients added</span>
+          <span><i class="dot" style="border:2px solid var(--muted);background:transparent"></i>load factor before</span>
+          <span><i class="dot" style="background:var(--text)"></i>load factor after</span>
+        </div>
+        <div id="chart"></div>
+      </section>
+    </div>
+
+    <aside class="aside card" aria-label="History timeline">
+      <h2>History timeline</h2>
+      <p class="dbar-key">Each entry keeps a snapshot. Click to view that state (read-only). Bars share one scale: fill = load factor after, line = before.</p>
+      <ol class="hist" id="hist"></ol>
+    </aside>
+  </div>
+  <footer>Static demo. Engine self-test results are printed to the browser console.</footer>
+</div>
+
+<script id="engine">
+/* Pure engine: no DOM access. */
+const Engine = (() => {
+  const loadFactor = p => (p.hours > 0 ? p.patientCount / p.hours : Infinity);
+  const createProvider = ({ id, name, hours, patientCount = 0 }) => ({ id, name, hours, patientCount });
+
+  // Lowest load factor wins; ties go to the first in the list. Providers with 0 hours are skipped.
+  function pickProvider(providers) {
+    let best = null, bestLf = Infinity;
+    for (const p of providers) {
+      if (!(p.hours > 0)) continue;
+      const lf = loadFactor(p);
+      if (best === null || lf < bestLf) { best = p; bestLf = lf; }
+    }
+    return best;
+  }
+  function assign(provider) { provider.patientCount++; return provider; }
+
+  function averageLoadFactor(providers) {
+    const eligible = providers.filter(p => p.hours > 0);
+    return eligible.length ? eligible.reduce((s, p) => s + loadFactor(p), 0) / eligible.length : 0;
+  }
+  // Starting patient count for a provider being added.
+  function initialCount(strategy, existing, hours) {
+    return strategy === 'fair' ? Math.round(hours * averageLoadFactor(existing)) : 0;
+  }
+
+  // Returns { next() }: picks a provider, assigns one patient, returns the provider (or null).
+  function createDistributor(providers, strategy, opts = {}) {
+    const K = Math.max(1, (opts.cap | 0) || 10);
+    let last = null, run = 0;
+    const cw = new Map();
+    return {
+      next() {
+        let p = null;
+        if (strategy === 'cap') {
+          let pool = providers;
+          if (last && run >= K) {
+            const others = providers.filter(q => q !== last);
+            if (pickProvider(others)) pool = others;
+          }
+          p = pickProvider(pool);
+        } else if (strategy === 'wrr') {
+          let total = 0, best = null;
+          for (const q of providers) {
+            if (!(q.hours > 0)) continue;
+            const w = (cw.get(q.id) || 0) + q.hours;
+            cw.set(q.id, w);
+            total += q.hours;
+            if (!best || w > cw.get(best.id)) best = q;
+          }
+          if (best) { cw.set(best.id, cw.get(best.id) - total); p = best; }
+        } else {
+          p = pickProvider(providers);
+        }
+        if (!p) return null;
+        assign(p);
+        run = p === last ? run + 1 : 1;
+        last = p;
+        return p;
+      }
+    };
+  }
+
+  const seed = () => [
+    createProvider({ id: 1, name: 'Sarah', hours: 40, patientCount: 400 }),
+    createProvider({ id: 2, name: 'James', hours: 30, patientCount: 300 }),
+    createProvider({ id: 3, name: 'Emily', hours: 20, patientCount: 200 }),
+    createProvider({ id: 4, name: 'Oliver', hours: 10, patientCount: 100 })
+  ];
+
+  function lfGap(providers) {
+    const l = providers.filter(p => p.hours > 0).map(loadFactor);
+    return l.length ? Math.max(...l) - Math.min(...l) : 0;
+  }
+  function run(providers, n, strategy, opts) {
+    const d = createDistributor(providers, strategy, opts), seq = [];
+    for (let i = 0; i < n; i++) { const p = d.next(); if (!p) break; seq.push(p.id); }
+    return seq;
+  }
+
+  function selfTest(opts = {}) {
+    const results = [];
+    const check = (name, ok) => results.push({ name, ok: !!ok });
+
+    let ps = [createProvider({ id: 1, name: 'A', hours: 10 }), createProvider({ id: 2, name: 'B', hours: 10 })];
+    check('tie goes to the first provider in the list', pickProvider(ps).id === 1);
+    ps = [createProvider({ id: 1, name: 'Z', hours: 0 }), createProvider({ id: 2, name: 'B', hours: 10, patientCount: 5 })];
+    check('provider with 0 hours is excluded', pickProvider(ps).id === 2);
+    check('no eligible provider returns null', pickProvider([createProvider({ id: 1, name: 'Z', hours: 0 })]) === null);
+    const a = createProvider({ id: 1, name: 'A', hours: 5 });
+    assign(a);
+    check('assign increments patientCount', a.patientCount === 1);
+
+    ps = seed();
+    check('seed starts balanced (all load factors equal)', lfGap(ps) === 0);
+    ps.push(createProvider({ id: 5, name: 'New', hours: 40 }));
+    let seq = run(ps, 100, 'current');
+    check('new 40h provider gets ~100% of the first 100 patients', seq.filter(id => id === 5).length >= 99);
+    run(ps, 1000, 'current');
+    check('after catching up, load factor gap is <= 1 patient/hour', lfGap(ps) <= 1);
+
+    ps = seed();
+    ps[2].hours = 40;
+    seq = run(ps, 100, 'current');
+    check('hours 20 -> 40 sends ~100% of the next 100 to that provider', seq.filter(id => id === 3).length >= 99);
+
+    ps = seed();
+    const start = initialCount('fair', ps, 40);
+    check('fair start gives round(hours x average load factor)', start === 400);
+    ps.push(createProvider({ id: 5, name: 'New', hours: 40, patientCount: start }));
+    seq = run(ps, 100, 'fair');
+    check('fair start: new provider gets a proportional share, not a burst', seq.filter(id => id === 5).length < 60);
+
+    ps = seed();
+    ps.push(createProvider({ id: 5, name: 'New', hours: 40 }));
+    seq = run(ps, 100, 'cap', { cap: 10 });
+    let maxRun = 0, cur = 0, prev = null;
+    for (const id of seq) { cur = id === prev ? cur + 1 : 1; prev = id; maxRun = Math.max(maxRun, cur); }
+    check('batch cap: never more than K in a row', maxRun <= 10);
+
+    ps = seed();
+    seq = run(ps, 100, 'wrr');
+    const cnt = id => seq.filter(x => x === id).length;
+    check('smooth WRR: 100 patients split exactly 40/30/20/10', cnt(1) === 40 && cnt(2) === 30 && cnt(3) === 20 && cnt(4) === 10);
+
+    if (opts.log !== false) {
+      const failed = results.filter(r => !r.ok);
+      console.groupCollapsed(`Engine self-test: ${results.length - failed.length}/${results.length} passed`);
+      results.forEach(r => console.assert(r.ok, `FAIL: ${r.name}`) || (r.ok && console.log('ok  ' + r.name)));
+      console.groupEnd();
+    }
+    return results;
+  }
+
+  return { loadFactor, createProvider, pickProvider, assign, averageLoadFactor, initialCount, createDistributor, seed, lfGap, selfTest };
+})();
+</script>
+
+<script id="app">
+(() => {
+  'use strict';
+  const NAMES = ['Sarah', 'James', 'Emily', 'Oliver', 'Priya', 'Daniel', 'Hannah', 'Mohammed', 'Charlotte', 'Lucas'];
+  const STRAT = {
+    current: { label: 'Current', desc: 'Current logic: the next patient goes to the provider with the lowest load factor (ties go to the first in the list). This reproduces the skew.' },
+    fair: { label: 'Fair start', desc: 'Fair start: when a provider is added, it starts with round(hours × average load factor of the others) patients, so it does not look empty. Distribution itself is unchanged.' },
+    cap: { label: 'Batch cap', desc: 'Batch cap: same as Current, but no provider receives more than K patients in a row while other providers are available.' },
+    wrr: { label: 'Smooth weighted round-robin', desc: 'Smooth weighted round-robin: every batch is spread in proportion to weekly hours and interleaved smoothly, regardless of who is "behind".' }
+  };
+  const TYPE_LABEL = { seed: 'Initial state', add: 'Provider added', hours: 'Hours changed', dist: 'Patients distributed', remove: 'Provider removed' };
+
+  const $ = s => document.querySelector(s);
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const fmt = n => (Number.isFinite(n) ? n.toFixed(3) : '—');
+  const pct = (a, b) => (b > 0 ? (100 * a / b) : 0);
+  const color = id => `hsl(${(id * 67 + 210) % 360} 62% 48%)`;
+  const snap = ps => ps.map(p => ({ id: p.id, name: p.name, hours: p.hours, patientCount: p.patientCount }));
+  const lf = Engine.loadFactor;
+
+  const S = {
+    providers: [], nextId: 5, nameCursor: 4, history: [], viewing: null,
+    strategy: 'current', cap: 10, busy: false, stream: [], timer: null, finish: null
+  };
+
+  function nextName() { return S.nameCursor < NAMES.length ? NAMES[S.nameCursor] : `Provider ${S.nameCursor + 1}`; }
+
+  function record(type, summary, before, extra) {
+    S.history.push(Object.assign({ n: S.history.length + 1, type, summary, before, after: snap(S.providers), strategy: S.strategy }, extra || {}));
+  }
+
+  function resetSeed() {
+    stopAnim();
+    S.providers = Engine.seed(); S.nextId = 5; S.nameCursor = 4; S.history = []; S.viewing = null; S.stream = [];
+    record('seed', 'Seed: 4 providers, every load factor is 10.000, so the distribution starts balanced.', null);
+    $('#msg').textContent = '';
+  }
+
+  /* ---- actions ---- */
+  function addProvider(name, hours) {
+    const before = snap(S.providers);
+    const avg = Engine.averageLoadFactor(S.providers);
+    const start = Engine.initialCount(S.strategy, S.providers, hours);
+    S.providers.push(Engine.createProvider({ id: S.nextId++, name, hours, patientCount: start }));
+    const newLf = start / hours;
+    let s = `${name} joined with ${hours} h/week and ${start} patients (load factor ${fmt(newLf)}; the others average ${fmt(avg)}).`;
+    if (start === 0 && avg > 0) s += ` Until it catches up (about ${Math.round(hours * avg)} patients), every new patient goes to ${name}.`;
+    else if (start > 0) s += ` Fair start: it begins close to the others.`;
+    record('add', s, before);
+  }
+
+  function setHours(id, hours) {
+    const p = S.providers.find(x => x.id === id);
+    if (!p || p.hours === hours) return;
+    const before = snap(S.providers);
+    const old = p.hours, oldLf = lf(p);
+    p.hours = hours;
+    let s = `${p.name}: ${old} → ${hours} h/week. Load factor ${fmt(oldLf)} → ${fmt(lf(p))}.`;
+    if (hours === 0) s += ' Excluded from distribution.';
+    else if (lf(p) < oldLf) s += ` Now the lowest, so ${p.name} may absorb the next patients.`;
+    record('hours', s, before);
+  }
+
+  function removeProvider(id) {
+    const p = S.providers.find(x => x.id === id);
+    if (!p) return;
+    const before = snap(S.providers);
+    S.providers = S.providers.filter(x => x.id !== id);
+    record('remove', `${p.name} (${p.hours} h/week, ${p.patientCount} patients) was removed.`, before);
+  }
+
+  function stopAnim() { if (S.timer) clearTimeout(S.timer); S.timer = null; S.busy = false; S.finish = null; }
+
+  function distribute(n, animate) {
+    if (!Engine.pickProvider(S.providers)) { $('#msg').textContent = 'No provider with hours > 0 to receive patients.'; return; }
+    $('#msg').textContent = '';
+    const before = snap(S.providers);
+    const strategy = S.strategy;
+    const d = Engine.createDistributor(S.providers, strategy, { cap: S.cap });
+    const received = {}, seq = [];
+    let done = 0;
+    const step = () => { const p = d.next(); if (!p) return false; received[p.id] = (received[p.id] || 0) + 1; seq.push(p.id); done++; return true; };
+    const finish = () => {
+      if (S.timer) clearTimeout(S.timer);
+      S.timer = null; S.busy = false; S.finish = null;
+      while (done < n && step());
+      let topId = null;
+      for (const id in received) if (topId === null || received[id] > received[topId]) topId = id;
+      const top = S.providers.find(p => String(p.id) === String(topId));
+      const share = pct(received[topId] || 0, n);
+      const strat = strategy === 'current' ? '' : ` Strategy: ${STRAT[strategy].label}.`;
+      let s = `${top.name} received ${received[topId]} of ${n} patients (${Math.round(share)}%).${strat}`;
+      record('dist', s, before, { n, received, sequence: seq, strategy });
+      S.stream = [];
+      render();
+    };
+    if (!animate) { finish(); return; }
+    S.busy = true; S.stream = []; S.finish = finish;
+    const per = Math.max(1, Math.ceil(n / 60));
+    const tick = () => {
+      for (let i = 0; i < per && done < n; i++) { if (!step()) break; S.stream.push(seq[seq.length - 1]); }
+      renderLive();
+      if (done < n) S.timer = setTimeout(tick, 30); else finish();
+    };
+    render();
+    tick();
+  }
+
+  /* ---- scales & helpers ---- */
+  function scales() {
+    let maxC = 1, maxL = 0.001;
+    const sets = [S.providers];
+    S.history.forEach(e => { if (e.before) sets.push(e.before); sets.push(e.after); });
+    sets.forEach(ps => ps.forEach(p => { maxC = Math.max(maxC, p.patientCount); const l = lf(p); if (Number.isFinite(l)) maxL = Math.max(maxL, l); }));
+    return { maxC, maxL };
+  }
+  const viewState = () => (S.viewing != null ? S.history[S.viewing].after : S.providers);
+  const scopeEvent = () => (S.viewing != null ? S.history[S.viewing] : S.history[S.history.length - 1]);
+
+  /* ---- render ---- */
+  function renderProviders() {
+    const ps = viewState(), { maxL } = scales();
+    const total = ps.reduce((s, p) => s + p.patientCount, 0);
+    const cand = Engine.pickProvider(ps);
+    const locked = S.viewing != null || S.busy;
+    $('#tbody').innerHTML = ps.length ? ps.map(p => {
+      const l = lf(p), isC = cand === p;
+      return `<tr class="${isC ? 'cand' : ''}" data-id="${p.id}">
+        <td class="c-name" data-label="Name"><span class="pname"><i class="dot" style="background:${color(p.id)}"></i>${esc(p.name)}${isC ? ' <span class="badge next">next candidate</span>' : ''}${p.hours === 0 ? ' <span class="badge">excluded</span>' : ''}</span></td>
+        <td data-label="Hours / week"><input class="hrs" type="number" min="0" max="168" step="1" value="${p.hours}" data-hours="${p.id}" aria-label="Hours per week for ${esc(p.name)}" inputmode="numeric" ${locked ? 'disabled' : ''}></td>
+        <td class="num" data-label="Patients">${p.patientCount}</td>
+        <td class="num" data-label="Load factor">${fmt(l)}</td>
+        <td class="num" data-label="Share">${pct(p.patientCount, total).toFixed(1)}%</td>
+        <td class="c-bar" data-label="Load"><div class="bar"><i style="width:${Number.isFinite(l) ? Math.min(100, 100 * l / maxL) : 0}%;background:${color(p.id)}"></i></div></td>
+        <td class="c-act"><button class="btn danger" type="button" data-remove="${p.id}" ${locked ? 'disabled' : ''} aria-label="Remove ${esc(p.name)}">Remove</button></td>
+      </tr>`;
+    }).join('') : '<tr><td colspan="7" class="muted">No providers. Add one above.</td></tr>';
+  }
+
+  function renderStream() {
+    let seq = S.stream;
+    if (!S.busy) { const ev = lastDist(); seq = ev ? ev.sequence : []; }
+    const cap = 500, shown = seq.length > cap ? seq.slice(-cap) : seq;
+    $('#stream').innerHTML = shown.map(id => `<i style="background:${color(id)}"></i>`).join('');
+    const names = id => { const p = (S.providers.find(x => x.id === id) || (scopeEvent().after.find(x => x.id === id))); return p ? p.name : '?'; };
+    if (S.busy) $('#ticker').textContent = shown.length ? `Patient #${seq.length} → ${names(seq[seq.length - 1])}` : 'Distributing…';
+    else if (seq.length) $('#ticker').textContent = `Last batch: ${seq.length} patients (each square = one patient, colored by receiving provider${seq.length > cap ? '; last ' + cap + ' shown' : ''}).`;
+    else $('#ticker').textContent = '';
+  }
+
+  function lastDist() {
+    const upto = S.viewing != null ? S.viewing : S.history.length - 1;
+    for (let i = upto; i >= 0; i--) if (S.history[i].type === 'dist') return S.history[i];
+    return null;
+  }
+
+  function renderSkew() {
+    const ev = lastDist(), ps = viewState();
+    const gap = Engine.lfGap(ps);
+    const l = ps.filter(p => p.hours > 0).map(lf);
+    let top = null, share = 0, status;
+    if (ev) {
+      let tid = null;
+      for (const id in ev.received) if (tid === null || ev.received[id] > ev.received[tid]) tid = id;
+      top = ev.after.find(p => String(p.id) === String(tid));
+      share = pct(ev.received[tid], ev.n);
+      status = share > 60 && ev.n >= 10 ? 'warn' : 'ok';
+    } else status = 'none';
+    const banner = status === 'warn'
+      ? `<div class="alert"><span aria-hidden="true">⚠</span> Skew detected: ${esc(top.name)} received ${Math.round(share)}% of the last batch.</div>`
+      : status === 'ok' ? `<div class="alert ok">No skew in the last batch (largest share ${Math.round(share)}%).</div>`
+      : `<div class="alert neutral">No batch distributed yet.</div>`;
+    $('#skew').innerHTML = banner + `<div class="stats">
+      <div class="stat"><b>${ev ? Math.round(share) + '%' : '—'}</b><span>${ev ? esc(top.name) + ' share of last batch (' + ev.received[top.id] + '/' + ev.n + ')' : 'Largest recipient in last batch'}</span></div>
+      <div class="stat"><b>${fmt(gap)}</b><span>Load factor gap (max − min)${l.length ? ': ' + fmt(Math.max(...l)) + ' / ' + fmt(Math.min(...l)) : ''}</span></div>
+      <div class="stat"><b>${ps.reduce((s, p) => s + p.patientCount, 0)}</b><span>Total patients</span></div>
+    </div>
+    <p class="muted small" style="margin:8px 0 0">Warning when one provider receives more than 60% of a batch of 10+ patients.</p>`;
+  }
+
+  function renderChart() {
+    const ev = scopeEvent(), { maxC, maxL } = scales();
+    $('#chartTitle').textContent = `After event #${ev.n}: ${TYPE_LABEL[ev.type]}. Bars share one scale across the whole history.`;
+    $('#chart').innerHTML = ev.after.map(p => {
+      const b = ev.before ? ev.before.find(x => x.id === p.id) : p;
+      const bc = b ? b.patientCount : 0, ac = p.patientCount;
+      const bl = b ? lf(b) : (p.hours > 0 ? 0 : Infinity), al = lf(p);
+      const base = Math.min(bc, ac), add = Math.max(ac - bc, 0);
+      const mk = (v, cls) => Number.isFinite(v) ? `<i class="mk ${cls}" style="left:${Math.min(100, 100 * v / maxL)}%"></i>` : '';
+      return `<div class="crow"><div class="cname"><i class="dot" style="background:${color(p.id)}"></i>${esc(p.name)} <span class="muted small">${p.hours}h</span></div>
+        <div class="cbars">
+          <div class="track"><span class="b0" style="width:${100 * base / maxC}%"></span><span class="b1" style="width:${100 * add / maxC}%;background:var(--accent)"></span></div>
+          <div class="lf">${mk(bl, 'before')}${mk(al, 'after')}</div>
+        </div>
+        <div class="cnum">Patients <b>${bc} → ${ac}</b>${add ? ` (+${add})` : ''} · Load factor <b>${fmt(bl)} → ${fmt(al)}</b></div></div>`;
+    }).join('') || '<p class="muted">No providers.</p>';
+  }
+
+  function renderHistory() {
+    const { maxL } = scales();
+    const items = S.history.map((e, i) => {
+      const ids = [];
+      (e.before || []).forEach(p => ids.push(p.id));
+      e.after.forEach(p => { if (!ids.includes(p.id)) ids.push(p.id); });
+      const rows = ids.map(id => {
+        const b = e.before ? e.before.find(p => p.id === id) : null, a = e.after.find(p => p.id === id);
+        const ref = a || b, bl = b ? lf(b) : null, al = a ? lf(a) : null;
+        const chg = e.before && (!a || !b || a.patientCount !== b.patientCount || a.hours !== b.hours);
+        const seedRow = !e.before;
+        const pcs = seedRow ? String(a.patientCount) : (b ? b.patientCount : 0) + ' → ' + (a ? a.patientCount : 'removed');
+        const delta = seedRow ? 0 : a && a.patientCount - (b ? b.patientCount : 0);
+        const hrs = seedRow ? `${a.hours}h` : !b && a ? `new, ${a.hours}h` : (b && a && b.hours !== a.hours ? `${b.hours}h → ${a.hours}h` : (a ? `${a.hours}h` : ''));
+        const w = v => (v != null && Number.isFinite(v) ? Math.min(100, 100 * v / maxL) : null);
+        return `<li class="drow ${chg ? 'chg' : ''}" style="list-style:none"><span class="dn dl"><i class="dot" style="background:${color(id)}"></i>${esc(ref.name)} <span class="dv">${hrs}</span></span>
+          <span class="dv">Patients <b>${pcs}</b>${delta ? ` (${delta > 0 ? '+' : ''}${delta})` : ''}<br>LF <b>${seedRow ? fmt(al) : (bl == null ? '—' : fmt(bl)) + ' → ' + (al == null ? '—' : fmt(al))}</b></span>
+          <span class="dbar">${w(al) != null ? `<i class="f" style="width:${w(al)}%;background:${color(id)}"></i>` : ''}${w(bl) != null && e.before ? `<i class="tk" style="left:${w(bl)}%"></i>` : ''}</span></li>`;
+      }).join('');
+      const skew = e.type === 'dist' && Math.max(...Object.values(e.received)) / e.n > 0.6 && e.n >= 10;
+      return `<li><button type="button" class="evt ${S.viewing === i ? 'sel' : ''}" data-ev="${i}" aria-pressed="${S.viewing === i}">
+        <span class="h"><span class="t">${TYPE_LABEL[e.type]}</span>${skew ? '<span class="badge warn">Skew detected</span>' : ''}<span class="n">#${e.n}</span></span>
+        <span class="s ${skew ? 'skew' : ''}">${esc(e.summary)}</span>
+        <ul class="drows" style="margin:0;padding:0">${rows}</ul></button></li>`;
+    });
+    $('#hist').innerHTML = items.reverse().join('');
+  }
+
+  function renderControls() {
+    const viewing = S.viewing != null;
+    $('#controls').inert = viewing;
+    document.querySelectorAll('[data-lock]').forEach(el => { el.disabled = S.busy; });
+    $('#skipBtn').hidden = !S.busy;
+    $('#strategy').value = S.strategy;
+    $('#stratDesc').textContent = STRAT[S.strategy].desc;
+    $('#capWrap').hidden = S.strategy !== 'cap';
+    const vb = $('#viewbar');
+    vb.classList.toggle('on', viewing);
+    if (viewing) { const e = S.history[S.viewing]; $('#viewtext').textContent = `Viewing the state after event #${e.n} (${TYPE_LABEL[e.type]}). Read-only.`; }
+    updateAddHint();
+  }
+
+  function updateAddHint() {
+    const h = Math.max(1, Math.min(60, parseInt($('#newHours').value, 10) || 1));
+    const start = Engine.initialCount(S.strategy, S.providers, h);
+    $('#addHint').textContent = start > 0
+      ? `Fair start: the new provider begins with ${start} patients (round(${h} × average load factor ${fmt(Engine.averageLoadFactor(S.providers))})).`
+      : 'The new provider begins with 0 patients, so its load factor is 0.';
+  }
+
+  function renderLive() { renderProviders(); renderStream(); }
+  function render() { renderControls(); renderProviders(); renderStream(); renderSkew(); renderChart(); renderHistory(); }
+
+  /* ---- events ---- */
+  $('#tbody').addEventListener('change', e => {
+    const input = e.target.closest('[data-hours]');
+    if (!input) return;
+    const v = parseInt(input.value, 10), id = +input.dataset.hours;
+    if (!Number.isFinite(v) || v < 0 || v > 168) { render(); return; }
+    setHours(id, v); render();
+  });
+  $('#tbody').addEventListener('click', e => {
+    const b = e.target.closest('[data-remove]');
+    if (b && !S.busy && S.viewing == null) { removeProvider(+b.dataset.remove); render(); }
+  });
+  $('#hist').addEventListener('click', e => {
+    const b = e.target.closest('[data-ev]');
+    if (!b || S.busy) return;
+    const i = +b.dataset.ev;
+    S.viewing = (i === S.history.length - 1 && S.viewing == null) ? null : i;
+    if (S.viewing === S.history.length - 1) S.viewing = null;
+    render();
+  });
+  $('#backBtn').addEventListener('click', () => { S.viewing = null; render(); });
+
+  $('#strategy').addEventListener('change', e => { S.strategy = e.target.value; render(); });
+  $('#cap').addEventListener('change', e => { const v = parseInt(e.target.value, 10); S.cap = Math.max(1, Math.min(100, v || 10)); e.target.value = S.cap; });
+
+  $('#addToggle').addEventListener('click', () => {
+    const f = $('#addForm'); f.hidden = !f.hidden;
+    $('#addToggle').setAttribute('aria-expanded', String(!f.hidden));
+    if (!f.hidden) { $('#newName').value = nextName(); updateAddHint(); $('#newName').focus(); }
+  });
+  const syncHours = v => { const h = Math.max(1, Math.min(60, parseInt(v, 10) || 1)); $('#newHours').value = h; $('#newHoursRange').value = h; updateAddHint(); };
+  $('#newHoursRange').addEventListener('input', e => syncHours(e.target.value));
+  $('#newHours').addEventListener('input', e => { if (e.target.value !== '') syncHours(e.target.value); });
+  $('#addForm').addEventListener('submit', e => {
+    e.preventDefault();
+    if (S.busy || S.viewing != null) return;
+    const def = nextName();
+    const name = $('#newName').value.trim() || def;
+    const hours = Math.max(1, Math.min(60, parseInt($('#newHours').value, 10) || 1));
+    if (name === def) S.nameCursor++;
+    addProvider(name, hours);
+    $('#addForm').hidden = true; $('#addToggle').setAttribute('aria-expanded', 'false');
+    render();
+  });
+
+  $('#quick').addEventListener('click', e => { const b = e.target.closest('[data-n]'); if (b) $('#nPat').value = b.dataset.n; });
+  $('#distBtn').addEventListener('click', () => {
+    const n = parseInt($('#nPat').value, 10);
+    if (!Number.isFinite(n) || n < 1 || n > 5000) { $('#msg').textContent = 'Enter a number of patients from 1 to 5000.'; return; }
+    distribute(n, true);
+  });
+  $('#skipBtn').addEventListener('click', () => { if (S.finish) S.finish(); });
+
+  function finishPending() { if (S.finish) S.finish(); }
+  $('#scReset').addEventListener('click', () => { resetSeed(); render(); });
+  $('#scNew').addEventListener('click', () => {
+    finishPending(); resetSeed();
+    const def = nextName(); S.nameCursor++;
+    addProvider(def, 40); distribute(100, false);
+  });
+  $('#scHours').addEventListener('click', () => {
+    finishPending(); resetSeed();
+    const p = S.providers.find(x => x.hours === 20);
+    setHours(p.id, 40); distribute(100, false);
+  });
+
+  /* ---- init ---- */
+  resetSeed();
+  render();
+  Engine.selfTest();
+})();
+</script>
+</body>
+</html>
